@@ -1,0 +1,16 @@
+services:
+  # Arena visual y servidor gRPC
+  servidor:
+    image: lrprll/connect6-server:latest
+    platform: linux/arm64
+    ports:
+      - "8080:8080"
+
+  # Tu agente local
+  mi-ia:
+    build: . 
+    environment:
+      - SERVER_ADDR=servidor:50051
+      - TEAM_NAME=Equipo_Obando_Llambi
+    depends_on:
+      - servidor
