@@ -1,14 +1,15 @@
 services:
-  # Arena visual y servidor gRPC
+  # Servidor Oficial Connect6 Arena (Interfaz Web en :8080 y gRPC en :50051)
   servidor:
     image: lrprll/connect6-server:latest
-    platform: linux/arm64
     ports:
       - "8080:8080"
+      - "50051:50051"
 
-  # Tu agente local
+  # Tu Agente Inteligente
   mi-ia:
-    build: . 
+    build: .
+    image: proyecto-ia-agent:latest
     environment:
       - SERVER_ADDR=servidor:50051
       - TEAM_NAME=Equipo_Obando_Llambi

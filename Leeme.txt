@@ -1,0 +1,74 @@
+========================================================================
+    INSTRUCCIONES DE EJECUCIÓN Y DOCUMENTACIÓN - PROYECTO CONNECT6 IA
+========================================================================
+Autores: Jesús Obando, Sebastian Llambi
+Equipo: Equipo_Obando_Llambi
+Materia: Inteligencia Artificial: Aprendizaje Automático (UCAB)
+Semestre: Marzo - Julio 2026
+========================================================================
+
+------------------------------------------------------------------------
+1. EXPLICACIÓN DE LA CONEXIÓN A CONNECT6 ARENA (gRPC)
+------------------------------------------------------------------------
+El Agente Inteligente (`agente_connect6.py`) se comunica con la plataforma 
+oficial "Connect6 Arena" (desarrollada por Laura Parilli y Miguel Salomon) 
+a través de la librería gRPC utilizando comunicación por streaming bidireccional.
+
+- El contrato de comunicación está definido en: proto/connect6.proto
+- Servicio gRPC: GameServer.Play(stream PlayerAction) returns (stream GameState)
+- Al iniciar, el agente envía una acción `register_team` con su nombre.
+- En cada turno, el servidor transmite el objeto `GameState` con la matriz 
+  del tablero (19x19) y la cantidad de fichas requeridas (`stones_required`).
+- El agente procesa el estado usando MCTS + Red Neuronal + Tácticas y 
+  devuelve una acción `Move` con las coordenadas (x, y) de sus fichas.
+
+------------------------------------------------------------------------
+2. INSTALACIÓN DE LIBRERÍAS Y COMPILACIÓN (PASO PREVIO)
+------------------------------------------------------------------------
+Abre la terminal de PowerShell en la carpeta raíz del proyecto y ejecuta:
+
+Paso 2.1: Instalar las librerías necesarias
+   python -m pip install grpcio grpcio-tools numpy
+
+Paso 2.2: Compilar el contrato gRPC Protobuf (.proto)
+   python -m grpc_tools.protoc -I./proto --python_out=. --grpc_python_out=. proto/connect6.proto
+
+------------------------------------------------------------------------
+3. FORMAS DE EJECUTAR EL PROYECTO
+------------------------------------------------------------------------
+
+--- OPCCIÓN A: INTERFAZ WEB GRÁFICA EN PYTHON (RECOMENDADA - SIN DOCKER) ---
+Servidor web ligero que muestra la plataforma visual Connect6 Arena en tu 
+navegador a través de http://localhost:8080:
+
+1. En la Terminal 1, ejecutar el Servidor Web:
+   python servidor_web_local.py
+
+2. En la Terminal 2, ejecutar el Agente IA:
+   python agente_connect6.py
+
+3. Abrir en el navegador: http://localhost:8080
+   - Para Jugar Humano vs IA: Haz clic en el tablero con el mouse.
+   - Para Ver IA vs IA: Haz clic en el botón '🤖 IA vs IA'.
+
+--- OPCIÓN B: PLATAFORMA OFICIAL EN DOCKER (SI TIENES DOCKER ACTIVO) ---
+Utiliza la imagen oficial 'lrprll/connect6-server:latest' de Laura Parilli:
+
+1. Abrir Docker Desktop y ejecutar en la terminal:
+   docker compose up --build
+
+2. Abrir en el navegador: http://localhost:8080
+
+--- OPCIÓN C: MODO CONSOLA / TERMINAL ---
+1. En la Terminal 1: python servidor_local.py (Elige opción 1 u opción 2)
+2. En la Terminal 2: python agente_connect6.py
+
+------------------------------------------------------------------------
+4. ENTREGABLES EXIGIDOS EN LAS PAUTAS (SECCIÓN 5 DEL PDF)
+------------------------------------------------------------------------
+1. Código fuente completo con este archivo 'Leeme.txt'.
+2. Informe del proyecto en formato PDF (Basado en 'Informe_Proyecto_Connect6.md').
+3. Declaración de autenticidad debidamente firmada.
+4. Archivo comprimido final nombrado como: Proy2_Obando_Llambi.rar (o .tar.xz).
+
+========================================================================
