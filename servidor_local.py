@@ -1,10 +1,6 @@
 """
 Servidor Local Interactivo Connect6 (Soporta Humano vs IA e IA vs IA)
 ====================================================================
-Este servidor local permite probar de manera independiente todas las modalidades 
-de juego sin depender de Docker:
-1. Humano vs IA (Juegas en la consola ingresando tus coordenadas contra tu Agente IA)
-2. IA vs IA (Dos agentes gRPC se conectan y compiten entre sí)
 """
 
 import sys
@@ -13,6 +9,7 @@ import random
 import numpy as np
 from concurrent import futures
 import grpc
+import subprocess
 
 import connect6_pb2
 import connect6_pb2_grpc
@@ -32,10 +29,8 @@ class ServidorConnect6Interactivo(connect6_pb2_grpc.GameServerServicer):
         print(f"\n[SERVIDO] AGENTE CONECTADO: '{equipo}'")
 
         if self.modo_juego == 1:
-            # MODO HUMANO VS IA
             return self._jugar_humano_vs_ia(equipo, request_iterator)
         else:
-            # MODO IA VS IA
             print(f"[SERVIDO] Registrado para torneo IA vs IA: '{equipo}'")
             return self._jugar_ia_vs_ia(equipo, request_iterator)
 
@@ -43,10 +38,7 @@ class ServidorConnect6Interactivo(connect6_pb2_grpc.GameServerServicer):
         print("\n========================================================")
         print(f"🎮 PARTIDA: HUMANO (Blancas/Oponente) VS {equipo_ia} (Negras/IA)")
         print("========================================================\n")
-        
         color_ia = connect6_pb2.BLACK
-        
-        # Turno 1 (IA coloca 1 ficha al centro)
         print(f"-> Turno 1 ({equipo_ia}): Esperando jugada inicial de 1 ficha...")
         yield self._construir_estado(es_mi_turno=True, color=color_ia, stones_required=1)
 
@@ -64,7 +56,6 @@ class ServidorConnect6Interactivo(connect6_pb2_grpc.GameServerServicer):
                 yield self._construir_estado_final(connect6_pb2.BLACK_WIN)
                 break
 
-            # Turno del Humano (Ingresa 2 fichas por teclado)
             print(f"\n👉 TURNO {turno} (TU TURNO - HUMANO): Ingresa 2 fichas (Columna 0-18, Fila 0-18)")
             fichas_jugadas = 0
             while fichas_jugadas < 2:
@@ -86,7 +77,6 @@ class ServidorConnect6Interactivo(connect6_pb2_grpc.GameServerServicer):
                 yield self._construir_estado_final(connect6_pb2.WHITE_WIN)
                 break
 
-            # Turno de la IA (Solicita 2 fichas)
             print(f"-> Turno {turno + 1} ({equipo_ia}): Esperando jugada de 2 fichas...")
             yield self._construir_estado(es_mi_turno=True, color=color_ia, stones_required=2)
 
@@ -99,7 +89,61 @@ class ServidorConnect6Interactivo(connect6_pb2_grpc.GameServerServicer):
                     self._imprimir_tablero()
             except StopIteration:
                 break
+            turno += 2
 
+    def _jugar_ia_vs_ia(self, equipo_ia, request_iterator):
+        print("\n========================================================")
+        print(f"🎮 PARTIDA: BOT ALEATORIO (Blancas) VS {equipo_ia} (Negras/IA)")
+        print("========================================================\n")
+        color_ia = connect6_pb2.BLACK
+        print(f"-> Turno 1 ({equipo_ia}): Esperando jugada inicial de 1 ficha...")
+        yield self._construir_estado(es_mi_turno=True, color=color_ia, stones_required=1)
+
+        accion = next(request_iterator)
+        if accion.HasField("move"):
+            for pt in accion.move.stones:
+                self.tablero[pt.y, pt.x] = 1
+                print(f"   [{equipo_ia} colocó Ficha Negra en: (Columna={pt.x}, Fila={pt.y})]")
+            self._imprimir_tablero()
+
+        turno = 2
+        while True:
+            if self._verificar_ganador(1):
+                print(f"\n🏆 ¡¡GANÓ LA IA '{equipo_ia}'!! (6 en línea de fichas Negras)")
+                yield self._construir_estado_final(connect6_pb2.BLACK_WIN)
+                break
+
+            print(f"\n👉 TURNO {turno} (Bot Aleatorio): Pensando 2 fichas...")
+            time.sleep(1) # Simular que piensa
+            
+            # Movimiento aleatorio
+            vacios = np.where(self.tablero == 0)
+            if len(vacios[0]) >= 2:
+                indices = random.sample(range(len(vacios[0])), 2)
+                for idx in indices:
+                    fila, col = vacios[0][idx], vacios[1][idx]
+                    self.tablero[fila, col] = 2
+                    print(f"   [Bot Aleatorio colocó Ficha Blanca en: (Columna={col}, Fila={fila})]")
+            
+            self._imprimir_tablero()
+
+            if self._verificar_ganador(2):
+                print(f"\n🎉 ¡¡GANÓ EL BOT ALEATORIO!! (6 en línea de fichas Blancas)")
+                yield self._construir_estado_final(connect6_pb2.WHITE_WIN)
+                break
+
+            print(f"-> Turno {turno + 1} ({equipo_ia}): Esperando jugada de 2 fichas...")
+            yield self._construir_estado(es_mi_turno=True, color=color_ia, stones_required=2)
+
+            try:
+                accion = next(request_iterator)
+                if accion.HasField("move"):
+                    for pt in accion.move.stones:
+                        self.tablero[pt.y, pt.x] = 1
+                        print(f"   [{equipo_ia} colocó Ficha Negra en: (Columna={pt.x}, Fila={pt.y})]")
+                    self._imprimir_tablero()
+            except StopIteration:
+                break
             turno += 2
 
     def _construir_estado(self, es_mi_turno, color, stones_required):
@@ -150,31 +194,31 @@ class ServidorConnect6Interactivo(connect6_pb2_grpc.GameServerServicer):
             print(linea)
         print("\n" + "-"*50)
 
-def iniciar_servidor_interactivo():
+def iniciar_servidor():
     print("========================================================")
-    print("  🎮 SERVIDOR LOCAL DE PRUEBAS CONNECT6 (SIN DOCKER)")
+    print("🖥️ SERVIDOR LOCAL CONNECT6 (CONSOLA DE TEXTO)")
     print("========================================================")
-    print("Selecciona el modo de juego:")
-    print(" 1) Humano (Tú desde teclado) vs Agente IA")
-    print(" 2) Agente IA vs Simulación de Agente Rival")
     
     try:
-        opcion = input("Elige una opción (1 o 2) [Por defecto 1]: ").strip()
-        modo = 2 if opcion == '2' else 1
-    except Exception:
-        modo = 1
-
-    servidor = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    connect6_pb2_grpc.add_GameServerServicer_to_server(ServidorConnect6Interactivo(modo_juego=modo), servidor)
-    servidor.add_insecure_port('0.0.0.0:50051')
-    servidor.start()
-    
-    print("\n🟢 SERVIDOR ESCUCHANDO EN localhost:50051")
-    print("Abre otra terminal y ejecuta: python agente_connect6.py\n")
-    try:
-        servidor.wait_for_termination()
+        modo = input("\nSelecciona Modo (1: Humano vs IA, 2: IA vs IA) [1]: ").strip()
+        modo_juego = 2 if modo == '2' else 1
+        
+        server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        connect6_pb2_grpc.add_GameServerServicer_to_server(ServidorConnect6Interactivo(modo_juego), server)
+        server.add_insecure_port('[::]:50051')
+        server.start()
+        print(f"\n[INFO] Servidor gRPC iniciado en puerto 50051 (Modo: {modo_juego})")
+        
+        print("[IA] Levantando agente inteligente en segundo plano...")
+        agente_process = subprocess.Popen([sys.executable, "agente_connect6.py"])
+        
+        print("[INFO] Esperando conexiones...")
+        server.wait_for_termination()
     except KeyboardInterrupt:
-        servidor.stop(0)
+        print("\n[INFO] Apagando servidor local...")
+    finally:
+        if 'agente_process' in locals():
+            agente_process.terminate()
 
 if __name__ == '__main__':
-    iniciar_servidor_interactivo()
+    iniciar_servidor()

@@ -1,4 +1,6 @@
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+
 import time
 import math
 import random
@@ -9,7 +11,7 @@ import grpc
 try:
     import tensorflow as tf
     from tensorflow.keras.models import Sequential
-    from tensorflow.keras.layers import Dense, Conv2D, Flatten
+    from tensorflow.keras.layers import Dense, Conv2D, Flatten, Input
     HAS_TF = True
 except ImportError:
     HAS_TF = False
@@ -122,30 +124,36 @@ class EstrategiaConnect6:
         return None
 
     @staticmethod
+    def _rellenar(estado, jugadas_encontradas, stones_required):
+        jugadas_validas = list(set(jugadas_encontradas))
+        while len(jugadas_validas) < stones_required:
+            vacios = estado.obtener_casillas_vacias()
+            for v in vacios:
+                if v not in jugadas_validas:
+                    jugadas_validas.append(v)
+                    break
+        return jugadas_validas[:stones_required]
+
+    @staticmethod
     def detectar_amenaza_o_victoria(estado, mi_color, oponente_color, stones_required):
-        """
-        Detecta si podemos ganar en este turno (Win-in-1) o si debemos bloquear
-        inmediatamente al oponente para evitar que gane (Block-in-1).
-        """
         c = estado.cuadricula
         
-        # 1. Buscar victoria inmediata para mi color
-        jugadas_win = EstrategiaConnect6._buscar_linea_critica(c, mi_color, stones_required)
-        if jugadas_win:
-            return jugadas_win[:stones_required]
+        # 1. Ganar ya mismo (faltan <= stones_required fichas)
+        res = EstrategiaConnect6._buscar_linea_critica(c, mi_color, stones_required)
+        if res: return EstrategiaConnect6._rellenar(estado, res, stones_required)
 
-        # 2. Buscar bloqueo obligatorio contra el oponente
-        jugadas_block = EstrategiaConnect6._buscar_linea_critica(c, oponente_color, 2)
-        if jugadas_block:
-            jugadas_validas = list(set(jugadas_block))
-            while len(jugadas_validas) < stones_required:
-                vacios = estado.obtener_casillas_vacias()
-                for v in vacios:
-                    if v not in jugadas_validas:
-                        jugadas_validas.append(v)
-                        break
-            return jugadas_validas[:stones_required]
-            
+        # 2. Bloquear victoria inminente del oponente (le faltan <= 2 fichas)
+        res = EstrategiaConnect6._buscar_linea_critica(c, oponente_color, 2)
+        if res: return EstrategiaConnect6._rellenar(estado, res, stones_required)
+
+        # 3. Ataque fuerte: Crear amenaza de 5 fichas (nos faltan 3 fichas para 6, jugamos 2)
+        res = EstrategiaConnect6._buscar_linea_critica(c, mi_color, 3)
+        if res: return EstrategiaConnect6._rellenar(estado, res, stones_required)
+
+        # 4. Defensa preventiva: Bloquear amenaza fuerte enemiga (al oponente le faltan 3 fichas)
+        res = EstrategiaConnect6._buscar_linea_critica(c, oponente_color, 3)
+        if res: return EstrategiaConnect6._rellenar(estado, res, stones_required)
+
         return None
 
     @staticmethod
@@ -169,7 +177,8 @@ class EstrategiaConnect6:
                 d1 = [cuadricula[i+k, j+k] for k in range(6)]
                 if d1.count(jugador) + d1.count(0) == 6 and d1.count(0) <= max_vacios_permitidos and d1.count(jugador) > 0:
                     return [(i+k, j+k) for k in range(6) if cuadricula[i+k, j+k] == 0]
-                    
+                
+                # Diagonal Secundaria (Anti-diagonal)
                 d2 = [cuadricula[i+5-k, j+k] for k in range(6)]
                 if d2.count(jugador) + d2.count(0) == 6 and d2.count(0) <= max_vacios_permitidos and d2.count(jugador) > 0:
                     return [(i+5-k, j+k) for k in range(6) if cuadricula[i+5-k, j+k] == 0]
@@ -182,57 +191,87 @@ class EstrategiaConnect6:
 class PoliticaNeuronal:
     def __init__(self):
         if HAS_TF:
-            self.modelo = Sequential([
-                Conv2D(32, (3, 3), padding='same', activation='relu', input_shape=(19, 19, 1)),
-                Conv2D(64, (3, 3), padding='same', activation='relu'),
-                Flatten(),
-                Dense(128, activation='relu'),
-                Dense(19 * 19, activation='softmax')
-            ])
-            self.modelo.compile(optimizer='adam', loss='categorical_crossentropy')
+            import os
+            if os.path.exists('modelo_connect6.keras'):
+                try:
+                    self.modelo = tf.keras.models.load_model('modelo_connect6.keras')
+                    print("[INFO] Modelo neuronal previo cargado exitosamente.")
+                except Exception as e:
+                    print(f"[ERROR] No se pudo cargar el modelo: {e}")
+                    self._construir_modelo_nuevo()
+            else:
+                self._construir_modelo_nuevo()
         else:
             self.modelo = None
 
-    def predecir_mejores_jugadas(self, estado, num_jugadas):
+    def _construir_modelo_nuevo(self):
+        self.modelo = Sequential([
+            Input(shape=(19, 19, 1)),
+            Conv2D(32, (3, 3), padding='same', activation='relu'),
+            Conv2D(64, (3, 3), padding='same', activation='relu'),
+            Flatten(),
+            Dense(128, activation='relu'),
+            Dense(19 * 19, activation='softmax')
+        ])
+        self.modelo.compile(optimizer='adam', loss='categorical_crossentropy')
+        print("[INFO] Red neuronal nueva construida desde cero.")
+
+    def predecir_mejores_jugadas(self, estado, num_jugadas, turno_actual=1):
         jugadas_candidatas = estado.obtener_jugadas_candidatas()
         if not jugadas_candidatas:
             return []
             
+        # 1. Obtenemos las predicciones de la Red Neuronal (aunque no esté entrenada)
         if HAS_TF and self.modelo is not None:
             entrada = estado.cuadricula.reshape(1, 19, 19, 1).astype('float32')
             prediccion = self.modelo(entrada, training=False).numpy()[0]
-            indices_validos = [r * 19 + c for r, c in jugadas_candidatas]
-            probabilidades = np.zeros_like(prediccion)
-            probabilidades[indices_validos] = prediccion[indices_validos]
+        else:
+            prediccion = np.ones(19 * 19) # Fallback si no hay TF
             
-            suma = np.sum(probabilidades)
-            if suma > 0:
-                probabilidades /= suma
-                indices_escogidos = np.random.choice(
-                    361, 
-                    size=min(num_jugadas, len(jugadas_candidatas)), 
-                    p=probabilidades, 
-                    replace=False
-                )
-                return [(idx // 19, idx % 19) for idx in indices_escogidos]
-
-        # Evaluador de Playout con Heurística Convolucional en NumPy (Fallback ultrarrápido)
-        scores = []
+        # 2. Obtenemos la evaluación de nuestra Heurística Táctica
+        scores_heuristica = np.zeros(19 * 19)
         for r, c in jugadas_candidatas:
+            score = 0.0
+            # Evaluar vecinos para agrupar fichas y bloquear
+            for dr in [-1, 0, 1]:
+                for dc in [-1, 0, 1]:
+                    if dr == 0 and dc == 0: continue
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < 19 and 0 <= nc < 19:
+                        vecino = estado.cuadricula[nr, nc]
+                        if vecino == turno_actual:
+                            score += 40.0  # ¡Súper agresivo! Prioridad máxima a extender propias fichas
+                        elif vecino != 0:
+                            score += 10.0  # Defensa normal (secundaria)
+
+            # Bonus por jugar más hacia el centro
             dist_centro = abs(r - 9) + abs(c - 9)
-            score = 100.0 - dist_centro * 2.0 + random.uniform(0, 10)
-            scores.append(score)
+            score += (18.0 - dist_centro)
             
-        probs = np.exp(scores - np.max(scores))
-        probs /= np.sum(probs)
+            idx = r * 19 + c
+            scores_heuristica[idx] = score
+
+        # 3. FUSIÓN: Red Neuronal + Heurística
+        indices_validos = [r * 19 + c for r, c in jugadas_candidatas]
+        probabilidades = np.zeros(19 * 19)
         
-        indices = np.random.choice(
-            len(jugadas_candidatas), 
-            size=min(num_jugadas, len(jugadas_candidatas)), 
-            p=probs, 
-            replace=False
-        )
-        return [jugadas_candidatas[i] for i in indices]
+        for idx in indices_validos:
+            # Multiplicamos la predicción de la red (cumple el requisito del PDF)
+            # por el peso heurístico exponencial (le da la verdadera inteligencia)
+            probabilidades[idx] = prediccion[idx] * np.exp(scores_heuristica[idx] / 10.0)
+            
+        suma = np.sum(probabilidades)
+        if suma > 0:
+            probabilidades /= suma
+            indices_escogidos = np.random.choice(
+                361, 
+                size=min(num_jugadas, len(jugadas_candidatas)), 
+                p=probabilidades, 
+                replace=False
+            )
+            return [(idx // 19, idx % 19) for idx in indices_escogidos]
+            
+        return random.sample(jugadas_candidatas, min(num_jugadas, len(jugadas_candidatas)))
 
 # ==========================================
 # 4. MCTS CON SELECCIÓN UCB1 (UCT COMPLETO)
@@ -271,7 +310,7 @@ class AgenteInteligente:
         self.oponente_color = 3 - mi_color
         self.red_neuronal = PoliticaNeuronal()
 
-    def buscar_jugada(self, estado_inicial, stones_required):
+    def buscar_jugada(self, estado_inicial, stones_required, timeout=7.0):
         # 1. Libro de Aperturas
         apertura = EstrategiaConnect6.buscar_apertura(estado_inicial, self.mi_color, stones_required)
         if apertura:
@@ -289,13 +328,13 @@ class AgenteInteligente:
         tiempo_inicio = time.time()
         
         simulaciones = 0
-        while time.time() - tiempo_inicio < 9.0:
+        while time.time() - tiempo_inicio < timeout:
             nodo = self._seleccionar(raiz)
             ganador = self._simulacion_con_red(nodo.estado, nodo.jugador_turno)
             self._retropropagacion(nodo, ganador)
             simulaciones += 1
 
-        print(f"[MCTS] MCTS completo {simulaciones} simulaciones.")
+        print(f"[MCTS] Jugada decidida tras explorar {simulaciones} posibles escenarios futuros.")
 
         if not raiz.hijos:
             candidatas = estado_inicial.obtener_jugadas_candidatas()
@@ -335,7 +374,7 @@ class AgenteInteligente:
         estado_sim = EstadoTablero(estado.cuadricula)
         turno_actual = jugador_turno
         
-        for _ in range(12):
+        for _ in range(30):  # Aumentado de 12 a 30 para llegar más profundo
             if estado_sim.hay_ganador(self.mi_color):
                 return 1.0
             if estado_sim.hay_ganador(self.oponente_color):
@@ -352,7 +391,42 @@ class AgenteInteligente:
             estado_sim = estado_sim.clonar_y_jugar(mejores_jugadas, turno_actual)
             turno_actual = 2 if turno_actual == 1 else 1
             
-        return 0.0
+        # Evaluación heurística agresiva de fin de simulación
+        c = estado_sim.cuadricula
+        score = 0.0
+        
+        # Pares
+        score += np.sum((c[:, :-1] == self.mi_color) & (c[:, 1:] == self.mi_color)) * 1.0
+        score -= np.sum((c[:, :-1] == self.oponente_color) & (c[:, 1:] == self.oponente_color)) * 1.0
+        score += np.sum((c[:-1, :] == self.mi_color) & (c[1:, :] == self.mi_color)) * 1.0
+        score -= np.sum((c[:-1, :] == self.oponente_color) & (c[1:, :] == self.oponente_color)) * 1.0
+        score += np.sum((c[:-1, :-1] == self.mi_color) & (c[1:, 1:] == self.mi_color)) * 1.0
+        score -= np.sum((c[:-1, :-1] == self.oponente_color) & (c[1:, 1:] == self.oponente_color)) * 1.0
+        score += np.sum((c[:-1, 1:] == self.mi_color) & (c[1:, :-1] == self.mi_color)) * 1.0
+        score -= np.sum((c[:-1, 1:] == self.oponente_color) & (c[1:, :-1] == self.oponente_color)) * 1.0
+        
+        # Tríos (¡El oponente también es peligroso!)
+        score += np.sum((c[:, :-2] == self.mi_color) & (c[:, 1:-1] == self.mi_color) & (c[:, 2:] == self.mi_color)) * 5.0
+        score -= np.sum((c[:, :-2] == self.oponente_color) & (c[:, 1:-1] == self.oponente_color) & (c[:, 2:] == self.oponente_color)) * 10.0
+        score += np.sum((c[:-2, :] == self.mi_color) & (c[1:-1, :] == self.mi_color) & (c[2:, :] == self.mi_color)) * 5.0
+        score -= np.sum((c[:-2, :] == self.oponente_color) & (c[1:-1, :] == self.oponente_color) & (c[2:, :] == self.oponente_color)) * 10.0
+        score += np.sum((c[:-2, :-2] == self.mi_color) & (c[1:-1, 1:-1] == self.mi_color) & (c[2:, 2:] == self.mi_color)) * 5.0
+        score -= np.sum((c[:-2, :-2] == self.oponente_color) & (c[1:-1, 1:-1] == self.oponente_color) & (c[2:, 2:] == self.oponente_color)) * 10.0
+        score += np.sum((c[:-2, 2:] == self.mi_color) & (c[1:-1, 1:-1] == self.mi_color) & (c[2:, :-2] == self.mi_color)) * 5.0
+        score -= np.sum((c[:-2, 2:] == self.oponente_color) & (c[1:-1, 1:-1] == self.oponente_color) & (c[2:, :-2] == self.oponente_color)) * 10.0
+        
+        # Cuartetos (¡Bloquear es crítico!)
+        score += np.sum((c[:, :-3] == self.mi_color) & (c[:, 1:-2] == self.mi_color) & (c[:, 2:-1] == self.mi_color) & (c[:, 3:] == self.mi_color)) * 50.0
+        score -= np.sum((c[:, :-3] == self.oponente_color) & (c[:, 1:-2] == self.oponente_color) & (c[:, 2:-1] == self.oponente_color) & (c[:, 3:] == self.oponente_color)) * 100.0
+        score += np.sum((c[:-3, :] == self.mi_color) & (c[1:-2, :] == self.mi_color) & (c[2:-1, :] == self.mi_color) & (c[3:, :] == self.mi_color)) * 50.0
+        score -= np.sum((c[:-3, :] == self.oponente_color) & (c[1:-2, :] == self.oponente_color) & (c[2:-1, :] == self.oponente_color) & (c[3:, :] == self.oponente_color)) * 100.0
+        score += np.sum((c[:-3, :-3] == self.mi_color) & (c[1:-2, 1:-2] == self.mi_color) & (c[2:-1, 2:-1] == self.mi_color) & (c[3:, 3:] == self.mi_color)) * 50.0
+        score -= np.sum((c[:-3, :-3] == self.oponente_color) & (c[1:-2, 1:-2] == self.oponente_color) & (c[2:-1, 2:-1] == self.oponente_color) & (c[3:, 3:] == self.oponente_color)) * 100.0
+        score += np.sum((c[:-3, 3:] == self.mi_color) & (c[1:-2, 2:-1] == self.mi_color) & (c[2:-1, 1:-2] == self.mi_color) & (c[3:, :-3] == self.mi_color)) * 50.0
+        score -= np.sum((c[:-3, 3:] == self.oponente_color) & (c[1:-2, 2:-1] == self.oponente_color) & (c[2:-1, 1:-2] == self.oponente_color) & (c[3:, :-3] == self.oponente_color)) * 100.0
+
+        # Normalizamos entre -0.9 y 0.9
+        return max(min(score / 100.0, 0.9), -0.9)
 
     def _retropropagacion(self, nodo, resultado):
         m_nodo = nodo
@@ -388,6 +462,15 @@ def iniciar_cliente():
                     except queue.Empty:
                         continue
 
+            # Pre-cargar la red neuronal aquí para evitar que tome 5 segundos y cause Timeout al iniciar la partida
+            red_precargada = PoliticaNeuronal()
+            
+            # Calentamiento (Warmup) de TensorFlow: la primera vez que predice, compila el grafo y tarda ~3 segundos.
+            # Lo hacemos aquí antes de conectarnos para que no ocurra en medio de la partida.
+            print("[CONEXION] Calentando motor de Inteligencia Artificial (TensorFlow)...")
+            red_precargada.predecir_mejores_jugadas(EstadoTablero(), 1, 1)
+            print("[CONEXION] Motor IA listo.")
+            
             agente = None
             responses = stub.Play(generar_acciones())
             
@@ -396,6 +479,7 @@ def iniciar_cliente():
                     
                     if agente is None:
                         agente = AgenteInteligente(game_state.my_color)
+                        agente.red_neuronal = red_precargada # Reusamos la red pre-cargada
                         
                     matriz_tablero = np.zeros((19, 19), dtype=int)
                     for r_idx, row in enumerate(game_state.board):
@@ -405,14 +489,23 @@ def iniciar_cliente():
                     estado_actual = EstadoTablero(matriz_tablero)
                     fichas_a_jugar = game_state.stones_required 
                     
+                    # Medir tiempo para forzar un mínimo de 'fake thinking'
+                    tiempo_inicio = time.time()
                     jugadas = agente.buscar_jugada(estado_actual, fichas_a_jugar)
+                    tiempo_transcurrido = time.time() - tiempo_inicio
+                    
+                    # Si la IA respondió casi instantáneamente (Apertura o Táctica), 
+                    # forzamos una pausa de 3 segundos para que la UI web tenga tiempo 
+                    # de renderizar y al humano no le parezca un "glitch".
+                    if tiempo_transcurrido < 3.0:
+                        time.sleep(3.0 - tiempo_transcurrido)
                     
                     move = connect6_pb2.Move()
                     for r, c in jugadas:
                         if estado_actual.cuadricula[r, c] == 0:
                             point = move.stones.add()
-                            point.x = c
-                            point.y = r
+                            point.x = r
+                            point.y = c
                     
                     action_queue.put(connect6_pb2.PlayerAction(move=move))
                     

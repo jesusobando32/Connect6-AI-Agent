@@ -6,12 +6,32 @@ services:
       - "8080:8080"
       - "50051:50051"
 
-  # Tu Agente Inteligente
+  # Tu Agente Inteligente (Negras)
   mi-ia:
     build: .
     image: proyecto-ia-agent:latest
     environment:
       - SERVER_ADDR=servidor:50051
-      - TEAM_NAME=Equipo_Obando_Llambi
+      - TEAM_NAME=IA_Equipo_Obando_Llambi
+      - CUDA_VISIBLE_DEVICES=-1
+    depends_on:
+      - servidor
+
+  # Tu Agente Inteligente (Blancas, para modo IA vs IA)
+  mi-ia-rival:
+    image: proyecto-ia-agent:latest
+    environment:
+      - SERVER_ADDR=servidor:50051
+      - TEAM_NAME=IA_Clon_Rival
+      - CUDA_VISIBLE_DEVICES=-1
+    depends_on:
+      - servidor
+
+  # Oponente de práctica (IA Aleatoria de la profesora)
+  ia-random:
+    image: lrprll/ia-aleatoria:latest
+    environment:
+      - SERVER_ADDR=servidor:50051
+      - TEAM_NAME=IA_Aleatoria
     depends_on:
       - servidor

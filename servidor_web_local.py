@@ -167,14 +167,14 @@ HTML_PAGE = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Connect6 Arena - Interfaz Web Local</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a2e; color: #fff; text-align: center; margin: 0; padding: 20px; }
-        h1 { color: #e94560; margin-bottom: 5px; }
-        .subtitle { color: #8d99ae; font-size: 14px; margin-bottom: 20px; }
-        .controls { margin: 15px auto; }
-        button { background: #e94560; color: white; border: none; padding: 10px 20px; font-size: 14px; border-radius: 5px; cursor: pointer; margin: 0 5px; font-weight: bold; }
-        button:hover { background: #ff6b81; }
-        #status { font-size: 16px; background: #16213e; padding: 12px; border-radius: 8px; max-width: 600px; margin: 15px auto; color: #4ecca3; border: 1px solid #0f3460; }
-        #board-container { display: inline-block; background: #dcb35c; padding: 20px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-top: 10px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #0f2027, #203a43, #2c5364); color: #fff; text-align: center; margin: 0; padding: 20px; min-height: 100vh; }
+        h1 { margin-top: 0; font-size: 2.5em; background: -webkit-linear-gradient(#4facfe, #00f2fe); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .subtitle { color: #ccc; font-size: 16px; margin-bottom: 20px; }
+        .controls { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); padding: 15px; border-radius: 15px; border: 1px solid rgba(255, 255, 255, 0.1); display: inline-block; margin-bottom: 15px; }
+        button { background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); color: white; padding: 10px 20px; font-size: 16px; border-radius: 10px; cursor: pointer; margin: 5px; transition: all 0.3s ease; }
+        button:hover { background: rgba(255, 255, 255, 0.2); transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        #status { font-size: 18px; font-weight: bold; background: rgba(0, 0, 0, 0.3); padding: 12px; border-radius: 10px; max-width: 600px; margin: 15px auto; color: #4facfe; border: 1px solid rgba(255, 255, 255, 0.1); }
+        #board-container { display: inline-block; background: #dcb35c; padding: 20px; border-radius: 15px; box-shadow: 0 15px 35px rgba(0,0,0,0.5); margin-top: 10px; border: 3px solid #8b5a2b; }
         canvas { cursor: pointer; display: block; }
     </style>
 </head>
@@ -183,6 +183,7 @@ HTML_PAGE = """<!DOCTYPE html>
     <div class="subtitle">Plataforma Web Local (Servidor sin Docker)</div>
     
     <div class="controls">
+        <button style="background: #2c3e50; margin-bottom: 10px;" onclick="volverAlMenu()">⬅️ Volver al Menú Principal</button><br>
         <button onclick="reiniciarPartida('humano_vs_ia')">👤 Humano vs IA</button>
         <button onclick="reiniciarPartida('ia_vs_ia')">🤖 IA vs IA (Simulación)</button>
     </div>
@@ -201,6 +202,13 @@ HTML_PAGE = """<!DOCTYPE html>
         const PADDING = 15;
 
         let gameState = { tablero: [], turno_actual: 1, mensaje: "", ganador: 0 };
+
+        async function volverAlMenu() {
+            try {
+                await fetch('/api/shutdown', { method: 'POST', body: '{}' });
+            } catch(e) {}
+            window.location.href = 'http://localhost:5000';
+        }
 
         function drawBoard() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -326,6 +334,8 @@ class WebRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == '/' or parsed.path == '/index.html':
             self.send_response(200)
             self.send_header('Content-Type', 'text/html; charset=utf-8')
+            # Forzar no-cache para evitar que el navegador guarde la UI del profe
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
             self.end_headers()
             self.wfile.write(HTML_PAGE.encode('utf-8'))
         elif parsed.path == '/api/state':
@@ -342,6 +352,10 @@ class WebRequestHandler(BaseHTTPRequestHandler):
                     "equipo_ia": JUEGO.equipo_ia
                 }
             self.wfile.write(json.dumps(data).encode('utf-8'))
+        else:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b"404 Not Found")
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -384,7 +398,22 @@ class WebRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
 
+        elif parsed.path == '/api/shutdown':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
+            import threading
+            threading.Thread(target=self.server.shutdown).start()
+
 def iniciar_servidores():
+    import subprocess
+    import sys
+    
+    # 0. Levantar la IA en segundo plano
+    print("[IA] Levantando agente inteligente en segundo plano...")
+    agente_process = subprocess.Popen([sys.executable, "agente_connect6.py"])
+
     # 1. Iniciar gRPC Server
     grpc_server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     connect6_pb2_grpc.add_GameServerServicer_to_server(ServidorGRPC(), grpc_server)
@@ -398,14 +427,16 @@ def iniciar_servidores():
     print("🌐 SERVIDOR WEB LOCAL CONNECT6 ARENA (100% PYTHON - SIN DOCKER)")
     print("========================================================================")
     print("👉 Abre tu navegador en: http://localhost:8080")
-    print("👉 En otra terminal ejecuta: python agente_connect6.py")
     print("========================================================================")
 
     try:
         web_server.serve_forever()
     except KeyboardInterrupt:
+        print("\n[INFO] Apagando servidores...")
+    finally:
         web_server.server_close()
         grpc_server.stop(0)
+        agente_process.terminate()
 
 if __name__ == '__main__':
     iniciar_servidores()
