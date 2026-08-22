@@ -1,8 +1,13 @@
-# 🧠 Agente Inteligente para Connect6 (MCTS + Deep Learning)
+# 🧠 NeuroHex: Connect6 AI Agent (MCTS + Deep Learning)
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
-![TensorFlow](https://img.shields.io/badge/TensorFlow-2.14-orange.svg)
-![gRPC](https://img.shields.io/badge/gRPC-Ready-green.svg)
+![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?style=flat-square&logo=python)
+![TensorFlow](https://img.shields.io/badge/TensorFlow-2.14-orange.svg?style=flat-square&logo=tensorflow)
+![gRPC](https://img.shields.io/badge/gRPC-Ready-green.svg?style=flat-square)
+![Docker](https://img.shields.io/badge/Docker-Supported-2496ED.svg?style=flat-square&logo=docker)
+
+Un agente de Inteligencia Artificial de alto rendimiento para el juego **Connect6**, desarrollado en Python. Este proyecto combina la exploración profunda de algoritmos de búsqueda con la intuición de redes neuronales, logrando una toma de decisiones estratégica en tiempo real. 
+
+El agente opera bajo una arquitectura cliente-servidor mediante **gRPC**, lo que le permite integrarse a múltiples entornos de simulación y plataformas (Docker/Python nativo).
 
 ---
 
@@ -15,66 +20,84 @@
 
 ---
 
-Este repositorio contiene la implementación de un agente de Inteligencia Artificial desarrollado en Python para jugar **Connect6**. El agente se conecta a un servidor de juego mediante **gRPC** y toma decisiones en tiempo real utilizando una arquitectura híbrida: **Monte Carlo Tree Search (MCTS)** con selección de política **UCB1**, una **Red Neuronal (Deep Learning)** para predecir movimientos (*playout policy*), y un **Motor Táctico de Detección de Amenazas**.
+## ✨ Características Principales
+
+* **🧠 Arquitectura de IA Híbrida**: Utiliza una combinación de **Monte Carlo Tree Search (MCTS)** con selección de política **UCB1** para la búsqueda de jugadas óptimas, guiado por una **Red Neuronal (Deep Learning)** pre-entrenada (*playout policy*) que evalúa las posiciones más prometedoras del tablero.
+* **⚔️ Motor Táctico Heurístico**: Subsistema especializado en la detección inmediata de amenazas críticas. Escanea el tablero en 4 direcciones (horizontal, vertical, diagonales) para ejecutar victorias instantáneas (*Win-in-1*) o bloqueos obligatorios (*Block-in-1*), ahorrando inmenso poder de cómputo del árbol MCTS.
+* **🌐 Launcher Web Integrado**: Interfaz gráfica nativa (sin dependencias externas complejas) para orquestar la IA, iniciar servidores de juego, y supervisar enfrentamientos (IA vs Humano, IA vs IA) desde tu navegador.
+* **🔄 Entrenable mediante Self-Play**: Incluye scripts de entrenamiento local para que la Red Neuronal mejore iterativamente jugando contra sí misma sin intervención humana.
+* **🔌 Comunicación Robusta (gRPC)**: El agente se conecta a servidores externos ("Connect6 Arena") mediante protocolos gRPC y Protobuf.
 
 ---
 
-## 🚀 Instalación Rápida
+## 🏗️ Stack Tecnológico
 
-1. Asegúrate de tener Python 3.10 o superior instalado.
-2. (Opcional pero recomendado) Crea un entorno virtual.
-3. Instala las dependencias necesarias:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Compila el contrato gRPC (si no lo has hecho):
-   ```bash
-   python -m grpc_tools.protoc -I./proto --python_out=. --grpc_python_out=. proto/connect6.proto
-   ```
+| Componente | Tecnología Utilizada | Descripción |
+| :--- | :--- | :--- |
+| **Agente Core** | `Python 3.10+`, `NumPy` | Lógica central, evaluación de reglas y MCTS. |
+| **Deep Learning** | `TensorFlow/Keras` | Predicción de movimientos (*policy network*). |
+| **Comunicación** | `gRPC`, `Protobuf` | Pipeline cliente-servidor de baja latencia. |
+| **Despliegue** | `Docker`, `Docker Compose` | Entorno de simulación estandarizado. |
+| **Interfaz Web** | `http.server` (Nativo) | Orquestador de procesos y dashboard visual. |
 
 ---
 
-## ▶️ ¿Cómo Correr el Proyecto? (Launcher Web)
+## 🚀 Instalación y Uso (Desarrollo Local)
 
-Hemos desarrollado un **Launcher Web Moderno** para controlar todo el proyecto de forma visual sin necesidad de tocar la consola.
+### 1. Requisitos Previos
+* **Python 3.10** o superior instalado en tu sistema.
+* (Opcional pero recomendado) Docker Desktop si deseas usar el servidor oficial del "Connect6 Arena".
 
-Simplemente ejecuta en tu terminal:
+### 2. Clonar y Preparar el Entorno
+```bash
+git clone https://github.com/tu-usuario/nombre-del-repo.git
+cd nombre-del-repo
+
+# Crear y activar entorno virtual (Evita conflictos con TensorFlow)
+python -m venv venv
+
+# En Windows:
+venv\Scripts\activate
+# En Mac/Linux:
+# source venv/bin/activate
+
+# Instalar dependencias
+pip install -r requirements.txt
+```
+
+### 3. Compilación de gRPC
+Es necesario compilar los *protobufs* para generar los archivos de comunicación si deseas correr el proyecto fuera de Docker.
+```bash
+python -m grpc_tools.protoc -I./proto --python_out=. --grpc_python_out=. proto/connect6.proto
+```
+
+### 4. Iniciar el Launcher Web
 ```bash
 python launcher_web.py
 ```
-👉 Se abrirá automáticamente un menú en tu navegador en `http://localhost:5000`. 
-Desde allí podrás **entrenar a la IA**, arrancar el servidor oficial de la profesora Laura Parilli en Docker, o acceder a las opciones de emergencia.
+👉 Se abrirá automáticamente tu navegador en `http://localhost:5000`. Desde este panel podrás:
+- **Iniciar una partida local** (Servidor Web Local 100% Python).
+- **Iniciar el servidor Docker** (Connect6 Arena Original).
+- **Ejecutar el pipeline de entrenamiento** (Self-Play).
 
-### ⚠️ AVISO IMPORTANTE: Servidor Oficial de la Profesora Laura Parilli (Docker)
-Si decides levantar el servidor de la profesora Laura Parilli ("Connect6 Arena" original) desde el menú, ten en cuenta el siguiente **defecto de su interfaz web**:
-* Al entrar a la configuración de la partida en `http://localhost:8080`, **SIEMPRE debes seleccionar la opción "Humano vs Humano"**. 
-* Aunque vayas a jugar tú contra la Inteligencia Artificial, si seleccionas "Humano vs IA" en su interfaz, el sistema se colgará (es un bug del archivo ejecutable original en Go). 
-* Selecciona "Humano vs Humano", la IA se conectará solita en segundo plano como el jugador negro y podrás jugar con normalidad.
+*(Nota: La IA se ejecutará automáticamente en segundo plano cuando inicies una partida desde el Launcher).*
 
 ---
 
-## 🆘 Opciones de Emergencia (Sin Docker)
+## ⚠️ Servidor Oficial (Arena) en Docker
 
-En caso de que el Docker de la profesora Laura falle durante la evaluación, o no tengas internet, el proyecto viene equipado con **dos servidores de respaldo 100% en Python**.
-
-Puedes acceder a ellos desde el menú **"Otras Opciones"** en el Launcher Web:
-
-1. **Servidor Web Local (Recomendado):** Levanta un servidor web muy parecido al de la profesora Laura, pero programado internamente. Te permitirá ver el tablero gráficamente, jugar contra la IA o poner a competir IA vs IA. ¡Lo mejor es que la IA se lanza sola!
-2. **Servidor de Consola (Texto):** Un entorno crudo en la consola. Verás el tablero impreso con caracteres (X y O) e ingresarás coordenadas con tu teclado. Excelente para auditar la lógica o si todo el sistema gráfico colapsa.
-
-*(Nota: Al abrir cualquiera de estas dos opciones, el script se encarga de levantar y cerrar automáticamente el proceso de `agente_connect6.py` en segundo plano, por lo que no debes preocuparte de hacerlo manual).*
+Si decides levantar el servidor en Docker desde el menú web para jugar en la interfaz original (`http://localhost:8080`), ten en cuenta este **defecto del ejecutable original en Go**:
+1. Al entrar a la configuración de la partida, **SIEMPRE debes seleccionar "Humano vs Humano"**.
+2. No selecciones "Humano vs IA", ya que la interfaz web colapsará (bug del software original).
+3. Al seleccionar "Humano vs Humano", nuestra IA desarrollada en Python se conectará de todas formas en segundo plano como el jugador negro y podrás competir contra ella con normalidad.
 
 ---
 
-## 🧠 Arquitectura de la Inteligencia Artificial
+## 🆘 Servidores de Respaldo
 
-1. **Motor Táctico (Detección de Amenazas):** Escanea el tablero en las 4 direcciones (horizontal, vertical y ambas diagonales) en búsqueda de victorias inminentes (Win-in-1) o bloqueos defensivos obligatorios (Block-in-1) contra líneas de 4 o 5 fichas del oponente.
-2. **MCTS con Selección UCB1:** Construye un árbol de decisiones simulando estados futuros. Utiliza la ecuación UCB1 para balancear la exploración de nuevas ramas y la explotación de líneas ganadoras.
-3. **Red Neuronal (Playout Policy):** Entrenada localmente mediante **Self-Play** (IA jugando contra IA). En lugar de hacer simulaciones aleatorias hasta el final del juego, la red evalúa qué movimientos son los más prometedores, ahorrando un inmenso poder de cómputo.
+En caso de fallos con Docker, el proyecto incluye **dos servidores de respaldo** accesibles desde el menú "Otras Opciones" en el Launcher:
+1. **Servidor Web Local:** Interfaz web programada internamente para jugar contra la IA o IA vs IA.
+2. **Servidor de Consola:** Entorno puro en terminal, útil para auditar la lógica del agente o en caso de fallo gráfico.
 
 ---
-
-## 👨‍💻 Autores
-* **Equipo:** Equipo_Obando_Llambi
-* **Integrantes:** Jesús Obando, Sebastian Llambi
-* **Universidad Católica Andrés Bello (UCAB) - 2026**
+> Proyecto desarrollado con pasión y mucha recursividad heurística 💻✨
