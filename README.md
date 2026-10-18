@@ -5,7 +5,7 @@
 ![gRPC](https://img.shields.io/badge/gRPC-Ready-green.svg?style=flat-square)
 ![Docker](https://img.shields.io/badge/Docker-Supported-2496ED.svg?style=flat-square&logo=docker)
 
-Un agente de Inteligencia Artificial de alto rendimiento para el juego **Connect6**, desarrollado en Python. Este proyecto combina la exploración profunda de algoritmos de búsqueda con la intuición de redes neuronales, logrando una toma de decisiones estratégica en tiempo real. 
+Un agente de Inteligencia Artificial para el juego **Connect6**, desarrollado en Python. Este proyecto combina la exploración profunda de algoritmos de búsqueda con la intuición de redes neuronales, logrando una toma de decisiones estratégica en tiempo real. 
 
 El agente opera bajo una arquitectura cliente-servidor mediante **gRPC**, lo que le permite integrarse a múltiples entornos de simulación y plataformas (Docker/Python nativo).
 
@@ -50,8 +50,8 @@ El agente opera bajo una arquitectura cliente-servidor mediante **gRPC**, lo que
 
 ### 2. Clonar y Preparar el Entorno
 ```bash
-git clone https://github.com/tu-usuario/nombre-del-repo.git
-cd nombre-del-repo
+git clone https://github.com/jesusobando32/Connect6-AI-Agent.git
+cd Connect6-AI-Agent
 
 # Crear y activar entorno virtual (Evita conflictos con TensorFlow)
 python -m venv venv
